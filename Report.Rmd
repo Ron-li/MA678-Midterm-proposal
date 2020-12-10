@@ -1,0 +1,600 @@
+---
+title: "Midterm Project"
+author: "Rong Li"
+date: "2020/12/8"
+output: pdf_document
+fig_caption: yes
+header-includes:
+  - \usepackage{placeins}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+pacman::p_load(stringr, magrittr, ggplot2, dplyr, leaflet, arm, DAAG, car, caret, png, grid, gridExtra, tableone, kableExtra, MatchIt)
+knitr::knit_hooks$set(plot = function (x, options) {
+  float_correct <- function(f, y, opts)  {
+    if (is.null(opts$regfloat) || opts$regfloat==FALSE)
+      paste0(f(y, opts), "\n\n\\FloatBarrier\n")
+    else
+      f(y, opts)
+  }
+  if (!is.null(options$out.width) || !is.null(options$out.height) ||
+      !is.null(options$out.extra) || options$fig.align != "default" ||
+      !is.null(options$fig.subcap)) {
+    if (is.null(options$fig.scap))
+      options$fig.scap = NA
+    return(float_correct(knitr:::hook_plot_tex, x, options))
+  }
+  return(float_correct(knitr:::hook_plot_md_base, x, options))
+})
+```
+
+```{r}
+# load data
+setwd("/Users/amelia/Documents/mssp/MA678/MA678-Midterm-proposal")
+df <- read.table("kc_house_data.txt", sep = ",", header = T)
+
+# select data
+df$date %<>% str_sub(1, 8)
+df$year <- str_sub(df$date, 1, 4)
+df$month <- str_sub(df$date, 5, 6)
+df$day <- str_sub(df$date, 7, 8)
+df$yr_latest <- ifelse(df$yr_built > df$yr_renovated, df$yr_built, df$yr_renovated)
+df$year %<>% as.numeric()
+df$yr_latest %<>% as.numeric()
+df$age <- df$year - df$yr_latest
+df$logprice <- log(df$price)
+df %<>% na.omit()
+```
+
+# Abstract
+
+- **Context**: As house price is related to every one of us, it's especially important to understand what factors may influence it.  
+- **Methods**: We developed a linear regression model to assess how these house features correlate with house price.  
+- **Finding**: Our model results found that many of these variables did have a effect on price.   
+- **Implications**:  Adjusting the method for measurement may be a necessary step forward for effectively assessing price.  
+
+# Introduction
+
+- **Context**. It is common knowledge that house price is affected by many factors. And the house price has attracted much attention.   Analyzing the data can give us a general idea of the important factors that influence the house price.  
+
+- **Report**. This report will investigate how house price in Seattle can be affected by multiple features of house, including the number of bedrooms, the number of bathrooms, the house area and etc.  
+We will use a linear regression model to find the relationship between these features and price.  
+We will analyze data downloaded from github, containing house transactions in Seattle from 2014-2015.  
+
+
+# Method
+
+## Data Cleaning and Selection
+
+Data was downloaded on github and cleaned using stringr package in R. We remove the NAs out of the raw data.  
+The 'date' column in our data was separated into year/month/day.  
+We used the transaction year minus the built year to get the house age. If the house has been renovated, we regarded transaction year minus renovated year as house age. Then we calculated the log of house price.  
+The final dataset included 21613 house transactions across Seattle.  
+
+## EDA
+After checking summary of the data, I wonder several things and get the conclusions by plots: [(click here to see summary)](#summary)  
+a) What is the most common house? [(click here to see the plot)](#common_house)  
+The most common house is house with one floor and three bedrooms. Knowing this can help the constructors build this kind of houses more.  
+b) In which month are houses best sold? [(click here to see the plot)](#month_house)  
+Houses are best sold in May. And the turnover is higher in summer than in winter.  
+c) Where are these houses located in? [(click here to see the plot)](#location_house)   
+These houses are mainly located in Seattle. The latitude ranges from 47.16 to 47.78 and longtitude ranges from -122.5 to -121.3.  
+d) What factors may influence the house price? [(click here to see the plots)](#factors_house)   
+According to the boxplots and scatter plots, the number of bedrooms & the number of bathrooms & square of living area & the number of floors & whether the house is on waterfront & the house view & the house condition $ the house grade & the neibourhoods & house age may all influence the house price.  
+
+## Model
+
+In order to predict the house price in Seattle, we dicided to use a linear regression model.  
+The predictors are bedrooms, bathrooms, sqft_living, floors, waterfront, view, condition, grade, zipcode and age. Since the house price is high, we take the logarithm of house price as outcome.  
+The output is very long, so it is put in appendix. [(click in here)](#lm_fit)  
+
+```{r}
+# use training data
+fit1 <- lm(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age, data = df)
+```
+
+
+# Results
+
+## Coefficients & Estimates
+From the [model summary](#lmsummary), R-squared is 0.87 which means the model fits well. The model p value and most coefficient p values are less than the significance level 0.05, so we know we have a statistically significant model.  
+Bathrooms, sqft_living, grade, age, waterfront and conditon have evidence of a positive effect on house price. The effect of age is relatively small, with a year increase in age correlating with an average expected increase of 0.00019 in house price on log scale.  
+On average, when other predictors are remained the same, the house price have this relationship: houses with 1.5 floors > 2 floors > 2.5 floors > 1 floor > 3.5 floors > 3 floors.   
+On average, when other predictors are remained the same, the house price have this relationship: houses with 4 level view> 3 level view > 1 level view > 2 level view > 0 level view.   
+On average, when other predictors are remained the same, the houses in area with zipcode of 98039 are the most expensive. And the houses in area with zipcode of 98002 are the cheapest.  
+Additionally, the number of bedrooms is displayed to have a negative effect on price, with an estimated decrease of 0.002 in price on log scale for one unit of increase in bedrooms.   
+
+
+## Multicollinearity & Residual Plots
+We noticed that all vifs are less than 5, which indicates the multicollinearity is small.  
+In figure 1, the two plots look flat and most of the point are evenly distributed on both sides of the red line.  
+
+```{r, fig.cap = "These two pictures show the residuals vs fitted values and the Cook's distance.", fig.height=3}
+par(mfrow=c(1,2))
+plot(fit1, which = c(1,4))
+```
+
+Figure 2 shows a Q-Q plot which is lower towards the bottom and higher towards the top. It shows a dataset with "fat tails", meaning that compared to the normal distribution there is more data located at the extremes of the distribution and less data in the center of the distribution. In terms of quantiles this means that the first quantile is much less than the first theoretical quantile and the last quantile is greater than the last theoretical quantile. In brief, the model looks not bad.  
+
+```{r, fig.cap = "The Q-Q plot shows how similar are the quantiles in my dataset compared to what the quantiles of my dataset would be if my dataset followed the Gaussian (Normal) distribution", fig.height=3, fig.width=3.7}
+par(mfrow=c(1,1))
+plot(fit1, which = 2)
+```
+
+## Propensity Score Matching
+We tried to compare the outcome (house price) of places on waterfronts vs off of them.   
+One of the easiest way is to look at the coefficient and p value for waterfront in previous regression model. $\beta_{watefront} = 0.44$ and p value is significant on the level of 0.05. We can believe on average, the price of houses on waterfront will be 0.44 higher than off waterfront on the log scale.  
+Another way is to do propensity score matching. We firstly checked comparison of unmatched samples and calculated the propensity scores from logistic regression. The level of logprice seems to be significantly different in the two groups (on waterfront vs off waterfront). [(click in here to see the propensity scores)](#propensityscores)   
+Then we matched the two samples using the matchit() function of the MatchIt package. After matching the samples, the size of the off waterfrant sample was reduced to the size of the Waterfront sample (n=163). We checked comparison of matched samples. The levels of the variables bedrooms/bathrooms/sqft_living/floors/condition/grade/zipcode/age are nearly identical after matching in the two groups(on waterfront vs off waterfront).    
+We used this subset to run regression model and assessd the treatment effect between comparable groups. Finally, we found a difference between the the two groups. [(click in here to see the summary of regression model)](#lm_of_matcheddata)   
+Overall, the waterfront has a positive effect on house price.  
+
+```{r, results = "hide", ig.show = "hide"}
+# Propensity Score Matching
+df$Group = as.logical(df$waterfront==1)
+
+#Then we compare the distribution of bedrooms/bathrooms/sqft_living/floors/waterfront/view/condition/grade/zipcode/age/logprice
+table1 <- CreateTableOne(vars = c('bedrooms', 'bathrooms', 'sqft_living', 'floors', 'view', 'condition', 'grade', 'zipcode', 'age', 'logprice'), 
+                         data = df, 
+                         factorVars = c('floors', 'view', 'condition', 'zipcode'), 
+                         strata = 'waterfront')
+table1 <- print(table1, 
+                printToggle = FALSE, 
+                noSpaces = TRUE)
+kable(table1[,1:3],  
+      align = 'c', 
+      caption = 'Table 1: Comparison of unmatched samples')
+# The level of logprice seems to have no significantly difference in the two groups.
+
+
+#Propensity scores are from logistic regression, so let's look at how this goes.
+scoremodel = glm(Group ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(view) + factor(condition) + grade + factor(zipcode) + age,data=df,family=binomial())
+propenscores = data.frame(pr_score = predict(scoremodel,type="response"),
+                          Group= scoremodel$model$Group)
+head(propenscores)
+scoremodel
+
+# propenscores %>% 
+#   mutate(Group == ifelse(Group==T, "onWaterfront","offWaterfront")) %>% 
+#   ggplot(aes(x = pr_score,fill=Group)) +
+#   geom_histogram(color="white") +
+#   facet_wrap(~Group) +
+#   xlab("Probability of getting treated") +
+#   theme_bw()
+
+# Matching the sample
+#The package MatchIt lets us use propensity score matching more easily and gives us a variety of options for matching algorithms
+match.it = matchit(Group ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(view) + factor(condition) + grade + factor(zipcode) + age, 
+                   data=df, method="nearest")
+a <- summary(match.it)
+
+#Here we can see our remaining data post-matching
+df.match = match.data(match.it)
+head(df.match)
+#After matching the samples, the size of the population sample was reduced to the size of the onWaterfront sample (n=163).
+
+#We can compare our groups again with our new matched dataset.
+table2 <- CreateTableOne(vars = c('bedrooms', 'bathrooms', 'sqft_living', 'floors', 'view', 'condition', 'grade', 'zipcode', 'age', 'logprice'), 
+                         data = df.match, 
+                         factorVars = c('floors', 'view', 'condition', 'zipcode'), 
+                         strata = 'waterfront')
+table2 <- print(table2, 
+                printToggle = FALSE, 
+                noSpaces = TRUE)
+kable(table2[,1:3],  
+      align = 'c', 
+      caption = 'Table 2: Comparison of matched samples')
+
+#We can now estimate treatment effects. We can use t-tests or other things, but here I'll use a linear regression.
+model = lm(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + waterfront + factor(view) + factor(condition) + grade + factor(zipcode) + age, data=df.match)
+summary(model)
+```
+
+```{r, fig.cap = "This is the visualization of the propensity scores distribution.", fig.height=4, fig.width=4.5}
+plot(match.it, type = 'jitter', interactive = FALSE)
+```
+
+
+
+## Validation 
+We fistly tried the validation set approach, spliting the data into two parts: training set and testing set, with the propotion of 8:2.  
+The model was built on the training dataset. We applied the model to the testing set to predict outcome values. Then we qualified the prediction error as the mean squared difference between the observed and the predicted outcome values.  
+We got R2 = 0.868, RMSE = 0.192 and MAE = 0.142. The prediction is very accurate. The average prediction error is low.  
+
+```{r, results = "hide"}
+## create training and testing data
+set.seed(1)
+trainingrow <- sample(1:nrow(df), 0.8*nrow(df))
+training <- df[trainingrow, ]
+testing <- df[-trainingrow,]
+
+# use training data
+fit2 <- lm(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age, data = training)
+#summary(fit2)
+
+## fit the testing data
+predtest <- predict(fit2, testing)
+
+## calculate the accuracy and error rate
+actualpred <- data.frame(cbind(actuals = testing$logprice, predicteds = predtest))
+correlationaccuracy <- cor(actualpred)
+correlationaccuracy
+data.frame( R2 = R2(predtest, testing$logprice), 
+            RMSE = RMSE(predtest, testing$logprice), 
+            MAE = MAE(predtest, testing$logprice))
+head(actualpred)
+```
+
+A disadvantage is that we built a model on a fraction of the data set only, possibly leaving out some interesting information about data, leading to higher bias.  
+Therefore, we set k = 5 and tried the k-fold cross validation instead. We got R2 = 0.868, RMSE = 0.192 and MAE = 0.141. The prediction is very accurate. The average prediction error is low.  
+Overall, the prediction of the model is great.  
+
+```{r, fig.cap = "The prediction is very accurate. The average prediction error is low.", fig.height=4, fig.width=5}
+par(mfrow=c(1, 1))
+cv.lm(df, form.lm=formula(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age), 
+      m=5, dots = FALSE, plotit = T, printit = F)
+```
+
+
+```{r, results = "hide"}
+# Define train control for k fold cross validation
+train_control <- trainControl(method="cv", number=5)
+# Fit Naive Bayes Model
+model <- train(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age, data=df, trControl=train_control, method="lm")
+# Summarise Results
+print(model)
+```
+
+
+
+# Discussion
+Many of our model results seem to line up well with literature. The more area of the houses usually comes with larger number of bathrooms, contributing to higher price. The houses on the waterfront are more expensive than off of them. Different neighbourhoods have different price, maybe because of the nearby public facilities such as good schools, commercial center, etc. The better the house condition is, the higher the price. The higher the house grade is, the higher the price.  
+The positive effect of house age is unexpected, which means the older the house, the higher the price. Usually people tends to buy new houses. It is also strange that the increase of view level doesn't always lead to the increase of house price. It may be important in the future to adjust the method for measuring view level.  
+
+\newpage
+
+# Appendix
+## Summary of Data {#summary}
+
+```{r}
+summary(df)
+```
+
+## Plots 
+### a) What is the most common house: {#common_house}
+
+```{r}
+comhouse <- df %>% group_by(bedrooms, floors) %>% summarise(count = sum(price > 0))
+p1 <- ggplot(comhouse, aes(x = floors, y = bedrooms, size = count)) + 
+  geom_point() + 
+  ylim(0, 13) + 
+  ggtitle("The most common house") + 
+  theme(plot.title = element_text(hjust = 0.5))
+p1
+```
+
+### b) In which month are houses best sold? {#month_house}
+
+```{r}
+monhouse <- df %>% group_by(month) %>% summarise(count = sum(price > 0))
+p2 <- ggplot(monhouse, aes(x = month, y = count, fill = factor(month))) + 
+  geom_bar(stat = "identity") + 
+  guides(fill = F) + 
+  ggtitle("The number of house for each month") + 
+  theme(plot.title = element_text(hjust = 0.5))
+p2
+```
+
+### c) Where are these houses located in? {#location_house}
+
+```{r}
+## I wonder the location of these houses
+#df%>%leaflet()%>%addTiles()%>%
+#  addCircleMarkers(lng=~long,lat=~lat, radius = 0.05, fill = F)
+img <- readPNG("/Users/amelia/Documents/mssp/MA678/MA678-Midterm-proposal/Rplot.png")
+grid.raster(img)
+## They are in Washington state, and in Seattle.
+```
+
+### d) What factors may influence the house price? {#factors_house}
+
+```{r}
+## I wonder what factors may influence the house price
+### will the number of bedrooms influence the house price?
+p2 <- ggplot(data = df, mapping = aes(x = factor(bedrooms), price)) + 
+  geom_boxplot()
+
+### will the number of bathrooms influence the house price?
+p3 <- ggplot(data = df, mapping = aes(x = factor(bathrooms), price)) + 
+  geom_boxplot()
+
+### will the living area influence the house price?
+p4 <- ggplot(data = df, mapping = aes(x = sqft_living, price)) + 
+  geom_point() + geom_smooth()
+
+### will the number of floors influence the house price?
+p5 <- ggplot(data = df, mapping = aes(x = factor(floors), price)) + 
+  geom_boxplot()
+
+### will the waterfront influence the house price?
+p6 <- ggplot(data = df, mapping = aes(x = factor(waterfront), price)) + 
+  geom_boxplot()
+
+### will the view influence the house price?
+p7 <- ggplot(data = df, mapping = aes(x = factor(view), price)) + 
+  geom_boxplot()
+
+### will the waterfront influence the house price?
+p8 <- ggplot(data = df, mapping = aes(x = factor(waterfront), price)) + 
+  geom_boxplot()
+
+### will the location influence the house price?
+p9 <- ggplot(data = df, mapping = aes(x = factor(zipcode), price)) + 
+  geom_boxplot() + 
+  coord_flip()
+
+### will the age influence the house price?
+p10 <- ggplot(data = df, mapping = aes(x = age, price)) + 
+  geom_point()
+
+grid.arrange(p2, p5, p6, p7, p8, nrow=3)
+
+grid.arrange(p3, p4, p9, p10, nrow=2)
+```
+
+## Output of the Linear Regression Model {#lmsummary}
+
+```{r}
+summary(fit1)
+```
+
+## Propensity Scores {#propensityscores}
+
+```{r}
+#Propensity scores are from logistic regression, so let's look at how this goes.
+scoremodel = glm(Group ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(view) + factor(condition) + grade + factor(zipcode) + age,data=df,family=binomial())
+propenscores = data.frame(pr_score = predict(scoremodel,type="response"),
+                          Group= scoremodel$model$Group)
+head(propenscores)
+scoremodel
+```
+
+## Regression Model of the Matched data {#lm_of_matcheddata}
+
+```{r}
+model = lm(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + waterfront + factor(view) + factor(condition) + grade + factor(zipcode) + age, data=df.match)
+summary(model)
+```
+
+
+# Bibliography
+- The main packages I use:  
+1.Andrew Gelman and Yu-Sung Su (2020). arm: Data Analysis Using
+  Regression and Multilevel/Hierarchical Models. R package version
+  1.11-2. https://CRAN.R-project.org/package=arm  
+2.Daniel E. Ho, Kosuke Imai, Gary King, Elizabeth A. Stuart
+  (2011). MatchIt: Nonparametric Preprocessing for Parametric
+  Causal Inference. Journal of Statistical Software, Vol. 42, No.
+  8, pp. 1-28. URL https://www.jstatsoft.org/v42/i08/  
+3.Max Kuhn (2020). caret: Classification and Regression Training.
+  R package version 6.0-86.
+  https://CRAN.R-project.org/package=caret  
+4.H. Wickham. ggplot2: Elegant Graphics for Data Analysis.
+  Springer-Verlag New York, 2016.  
+5.Kazuki Yoshida and Alexander Bartel (2020). tableone: Create
+  'Table 1' to Describe Baseline Characteristics with or without
+  Propensity Score Weights. R package version 0.12.0.
+  https://CRAN.R-project.org/package=tableone  
+  
+- The data I use is downloaded from [github](https://github.com/Shreyas3108/house-price-prediction).
+
+
+
+# Supplement
+This part includes all the code:
+
+```{r, echo = TRUE, eval = FALSE}
+# load the date
+setwd("/Users/amelia/Documents/mssp/MA678/MA678-Midterm-proposal")
+df <- read.table("kc_house_data.txt", sep = ",", header = T)
+
+df$date %<>% str_sub(1, 8)
+df$year <- str_sub(df$date, 1, 4)
+df$month <- str_sub(df$date, 5, 6)
+df$day <- str_sub(df$date, 7, 8)
+df$yr_latest <- ifelse(df$yr_built > df$yr_renovated, df$yr_built, df$yr_renovated)
+df$year %<>% as.numeric()
+df$yr_latest %<>% as.numeric()
+df$age <- df$year - df$yr_latest
+df$logprice <- log(df$price)
+df %<>% na.omit()
+
+df2 <- df %>% dplyr::select(logprice, bedrooms, 
+              bathrooms, sqft_living, floors, waterfront, view, 
+              condition, grade, zipcode, lat, long)
+
+# EDA
+## summary
+# summary(df)
+
+## I wonder the most common house
+comhouse <- df %>% group_by(bedrooms, floors) %>% summarise(count = sum(price > 0))
+p1 <- ggplot(comhouse, aes(x = floors, y = bedrooms, size = count)) + 
+  geom_point() + 
+  ylim(0, 13) + 
+  ggtitle("The most common house") + 
+  theme(plot.title = element_text(hjust = 0.5))
+p1
+# As we can see from the picture, the most common house is house with one floor and three bedrooms.
+
+## houses are best sold in which month?
+monhouse <- df %>% group_by(month) %>% summarise(count = sum(price > 0))
+p2 <- ggplot(monhouse, aes(x = month, y = count, fill = factor(month))) + 
+  geom_bar(stat = "identity") + 
+  guides(fill = F)
+p2
+# houses are best sold in May. And the turnover is higher in summer than in winter.
+
+## I wonder the location of these houses
+df%>%leaflet()%>%addTiles()%>%
+  addCircleMarkers(lng=~long,lat=~lat, radius = 0.05, fill = F)
+## They are in Washington state, and in Seatle.
+
+## I wonder what factors may influence the house price
+### will the number of bedrooms influence the house price?
+p2 <- ggplot(data = df, mapping = aes(x = factor(bedrooms), price)) + 
+  geom_boxplot()
+
+### will the number of bathrooms influence the house price?
+p3 <- ggplot(data = df, mapping = aes(x = factor(bathrooms), price)) + 
+  geom_boxplot()
+
+### will the living area influence the house price?
+p4 <- ggplot(data = df, mapping = aes(x = sqft_living, price)) + 
+  geom_point() + geom_smooth()
+
+### will the number of floors influence the house price?
+p5 <- ggplot(data = df, mapping = aes(x = factor(floors), price)) + 
+  geom_boxplot()
+
+### will the waterfront influence the house price?
+p6 <- ggplot(data = df, mapping = aes(x = factor(waterfront), price)) + 
+  geom_boxplot()
+
+### will the view influence the house price?
+p7 <- ggplot(data = df, mapping = aes(x = factor(view), price)) + 
+  geom_boxplot()
+
+### will the waterfront influence the house price?
+p8 <- ggplot(data = df, mapping = aes(x = factor(waterfront), price)) + 
+  geom_boxplot()
+
+### will the location influence the house price?
+p9 <- ggplot(data = df, mapping = aes(x = factor(zipcode), price)) + 
+  geom_boxplot() + 
+  coord_flip()
+
+### will the age influence the house price?
+p10 <- ggplot(data = df, mapping = aes(x = age, price)) + 
+  geom_point()
+
+grid.arrange(p2, p5, p6, p7, p8, nrow=3)
+grid.arrange(p3, p4, p9, p10, nrow=2)
+
+## Model
+# fit linear regession model
+fit1 <- lm(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age, 
+           data = df)
+summary(fit1)
+vif(fit1)
+# all vifs are <5, which indicates the multicollinearity is small.
+
+# residual plot
+par(mfrow=c(2, 2))
+plot(fit1)
+
+
+# Propensity Score Matching
+df$Group = as.logical(df$waterfront==1)
+
+#Then we compare the distribution of bedrooms/bathrooms/sqft_living/floors/waterfront/view/condition/grade/zipcode/age/logprice
+table1 <- CreateTableOne(vars = c('bedrooms', 'bathrooms', 'sqft_living', 'floors', 'view', 'condition', 'grade', 'zipcode', 'age', 'logprice'), 
+                         data = df, 
+                         factorVars = c('floors', 'view', 'condition', 'zipcode'), 
+                         strata = 'waterfront')
+table1 <- print(table1, 
+                printToggle = FALSE, 
+                noSpaces = TRUE)
+kable(table1[,1:3],  
+      align = 'c', 
+      caption = 'Table 1: Comparison of unmatched samples')
+# The level of logprice seems to have no significantly difference in the two groups.
+
+
+#Propensity scores are from logistic regression, so let's look at how this goes.
+scoremodel = glm(Group ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(view) + factor(condition) + grade + factor(zipcode) + age,data=df,family=binomial())
+propenscores = data.frame(pr_score = predict(scoremodel,type="response"),
+                          Group= scoremodel$model$Group)
+head(propenscores)
+scoremodel
+
+propenscores %>% 
+  mutate(Group == ifelse(Group==T, "onWaterfront","offWaterfront")) %>% 
+  ggplot(aes(x = pr_score,fill=Group)) +
+  geom_histogram(color="white") +
+  facet_wrap(~Group) +
+  xlab("Probability of getting treated") +
+  theme_bw()
+
+# Matching the sample
+#The package MatchIt lets us use propensity score matching more easily and gives us a variety of options for matching algorithms
+match.it = matchit(Group ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(view) + factor(condition) + grade + factor(zipcode) + age, 
+                   data=df, method="nearest")
+a <- summary(match.it)
+
+#Here we can see our remaining data post-matching
+df.match = match.data(match.it)
+head(df.match)
+#After matching the samples, the size of the population sample was reduced to the size of the onWaterfront sample (n=163).
+
+#We can compare our groups again with our new matched dataset.
+table2 <- CreateTableOne(vars = c('bedrooms', 'bathrooms', 'sqft_living', 'floors', 'view', 'condition', 'grade', 'zipcode', 'age', 'logprice'), 
+                         data = df.match, 
+                         factorVars = c('floors', 'view', 'condition', 'zipcode'), 
+                         strata = 'waterfront')
+table2 <- print(table2, 
+                printToggle = FALSE, 
+                noSpaces = TRUE)
+kable(table2[,1:3],  
+      align = 'c', 
+      caption = 'Table 2: Comparison of matched samples')
+
+kable(a$sum.matched[c(1,2,4)], digits = 2, align = 'c', 
+      caption = 'Table 3: Summary of balance for matched data')
+
+#We can now estimate treatment effects. We can use t-tests or other things, but here I'll use a linear regression.
+model = lm(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + waterfront + factor(view) + factor(condition) + grade + factor(zipcode) + age, data=df.match)
+summary(model)
+
+plot(match.it, type = 'jitter', interactive = FALSE)
+
+# Validation
+## create training and testing data
+set.seed(1)
+trainingrow <- sample(1:nrow(df), 0.8*nrow(df))
+training <- df[trainingrow, ]
+testing <- df[-trainingrow,]
+
+## fit the testing data
+predtest <- predict(fit1, testing)
+
+## calculate the accuracy and error rate
+actualpred <- data.frame(cbind(actuals = testing$logprice, predicteds = predtest))
+correlationaccuracy <- cor(actualpred)
+correlationaccuracy
+data.frame( R2 = R2(predtest, testing$logprice), 
+            RMSE = RMSE(predtest, testing$logprice), 
+            MAE = MAE(predtest, testing$logprice))
+#head(actualpred)
+
+
+## k-fold Cross-Validation
+par(mfrow=c(1, 1))
+cv.lm(df, form.lm=formula(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age), 
+      m=5, dots = FALSE, plotit = T, printit = T)
+
+# Define train control for k fold cross validation
+train_control <- trainControl(method="cv", number=5)
+# Fit Naive Bayes Model
+model <- train(logprice ~ bedrooms + bathrooms + sqft_living + factor(floors) + factor(waterfront) + factor(view) + factor(condition) + grade + factor(zipcode) + age, 
+               data=df, 
+               trControl=train_control, 
+               method="lm")
+# Summarise Results
+print(model)
+```
+
+
+
+
